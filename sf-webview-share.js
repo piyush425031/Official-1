@@ -128,108 +128,24 @@
 
   window.__sfOpenInAppBrowser = openInAppBrowser;
 
-  /* Final-resort fallback when neither a native bridge nor
-     navigator.share is usable: hand the text to WhatsApp directly.
-     Never open wa.me/api.whatsapp.com here; those URLs are what route the
-     user into the outer browser instead of the installed WhatsApp app. */
-  function shareFallback(text) {
-    var encoded = encodeURIComponent(text);
-    var waAppUrl = 'whatsapp://send?text=' + encoded;
-    var settled = false;
-
-    var fallbackTimer = setTimeout(function () {
-      if (settled) return;
-      settled = true;
-      try {
-        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-          navigator.clipboard.writeText(text);
-        }
-      } catch (e) {}
-      try {
-        window.dispatchEvent(new CustomEvent('sf-share-unavailable', {
-          detail: { text: text }
-        }));
-      } catch (e) {}
-    }, 1200);
-
-    /* If the WhatsApp app intercepts the scheme, the WebView/page is
-       backgrounded almost immediately — cancel the web fallback. */
-    function onVisibilityDrop() {
-      if (document.hidden) {
-        settled = true;
-        clearTimeout(fallbackTimer);
-      }
-    }
-    document.addEventListener('visibilitychange', onVisibilityDrop, { once: true });
-    window.addEventListener('blur', onVisibilityDrop, { once: true });
-
-    try {
-      window.location.href = waAppUrl;
-    } catch (e) {
-      clearTimeout(fallbackTimer);
-      try {
-        window.dispatchEvent(new CustomEvent('sf-share-unavailable', {
-          detail: { text: text }
-        }));
-      } catch (ignore) {}
-    }
-  }
-
+  /* Share only through the native Web Share API. */
   /**
    * window.__sfShare(text, title, url)
-   * Call this instead of navigator.share / wa.me directly anywhere
-   * in the app. Must be invoked synchronously from a user gesture
-   * (tap handler) — required by both the Web Share API and Android
-   * intent scheme navigation.
+   * A canceled or unavailable share sheet is a safe no-op: there is no
+   * redirect, URL fallback, clipboard fallback, or custom URL scheme.
    */
   function sfShare(text, title, url) {
     title = title || 'Star Follower';
     var payload = { title: title, text: text };
     if (url) payload.url = url;
 
-    /* 1) A native bridge the APK wrapper may have injected
-          (e.g. window.Android.shareText, common in WebView
-          wrapper templates that expose @JavascriptInterface). */
+    if (typeof navigator.share !== 'function') return;
     try {
-      if (window.Android && typeof window.Android.shareText === 'function') {
-        window.Android.shareText(text);
-        return;
+      var result = navigator.share(payload);
+      if (result && typeof result.catch === 'function') {
+        result.catch(function () {});
       }
-    } catch (e) { /* fall through */ }
-
-    /* 2) GoNative-style bridge, already referenced elsewhere in this app. */
-    try {
-      if (window.gonative && window.gonative.share &&
-          typeof window.gonative.share.share === 'function') {
-        window.gonative.share.share(payload);
-        return;
-      }
-    } catch (e) { /* fall through */ }
-
-    /* 3) Standard Web Share API. Guard both the synchronous throw
-          (permission denied, insecure context, not implemented in
-          this WebView build) and the async promise rejection. */
-    if (typeof navigator.share === 'function') {
-      try {
-        var result = navigator.share(payload);
-        if (result && typeof result.catch === 'function') {
-          result.catch(function (err) {
-            // AbortError = user cancelled the native sheet — respect that,
-            // don't force WhatsApp on them.
-            if (err && err.name === 'AbortError') return;
-            shareFallback(text);
-          });
-        }
-        return;
-      } catch (err) {
-        if (err && err.name === 'AbortError') return;
-        // Synchronous throw — WebView doesn't actually support it
-        // despite navigator.share existing. Fall through to fallback.
-      }
-    }
-
-    /* 4) No native bridge, no working Web Share API. */
-    shareFallback(text);
+    } catch (e) {}
   }
 
   window.__sfShare = sfShare;
