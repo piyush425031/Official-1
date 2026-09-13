@@ -597,6 +597,14 @@ window.APP_VERSION = APP_VERSION;
           'v.jsx("button",{onClick:()=>{Wset(null);h(!1)},style:{position:"absolute"',
           'v.jsx("button",{type:"button",className:"sf-offerwall-back","aria-label":"Close offerwall",onClick:()=>{Wset(null);h(!1)},style:{position:"absolute"'
         )
+         .replace(
+           'v.jsx("button",{type:"button",className:"sf-offerwall-back","aria-label":"Close offerwall",onClick:()=>{Wset(null);h(!1)},style:{position:"absolute"',
+           'v.jsxs("div",{className:"sf-offerwall-header",children:[v.jsx("button",{type:"button",className:"sf-offerwall-back","aria-label":"Close offerwall",onClick:()=>{Wset(null);h(!1)},style:{position:"absolute"'
+         )
+         .replace(
+           'children:"✕ Back"}),v.jsx("iframe"',
+           'children:"‹ Back"}),v.jsx("span",{className:"sf-offerwall-title",children:"Offers"}),]}),v.jsx("iframe"'
+         )
         /*
          * Keep the authenticated layout mounted for all app tabs. Only the
          * route view changes, inside a React transition, so the header and
