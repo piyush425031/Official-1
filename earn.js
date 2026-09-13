@@ -27,7 +27,8 @@
 
       // ── Inject logged-in user UUID as &subid= ─────────────────────
       function injectSubid(href) {
-        var uid = localStorage.getItem('sf_user_id') || '';
+        var uid = localStorage.getItem('sf_user_unique_id') ||
+                  localStorage.getItem('sf_user_id') || '';
         if (!uid) return href;
         try {
           var u = new URL(href);

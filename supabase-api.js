@@ -275,6 +275,21 @@ window.sfLoggedIn = window.sfLoggedIn || false;
     return entry;
   }
 
+  function readCachedUserData(url) {
+    var match = String(url || '').split('?')[0].match(/^\/api\/user\/([^/]+)$/);
+    if (!match) return null;
+    try {
+      var cached = JSON.parse(localStorage.getItem('sf_user_cache') || 'null');
+      if (!cached || cached.data == null) return null;
+      return {
+        data: cached.data,
+        updatedAt: cached.updatedAt || 0
+      };
+    } catch (e) {
+      return null;
+    }
+  }
+
   var _syncWindows = {};
   window.__sfCanSync = function (key, minimumWindowMs) {
     if (!minimumWindowMs || minimumWindowMs <= 0) return true;
@@ -337,6 +352,7 @@ window.sfLoggedIn = window.sfLoggedIn || false;
     // mount. This write is intentionally best-effort and never gates login.
     try {
       if (data.userId) localStorage.setItem('sf_user_id', data.userId);
+      if (data.userId) localStorage.setItem('sf_user_unique_id', data.userId);
       if (data.token)  localStorage.setItem('sf_token', data.token);
       /* login state transition → keep the global flag in sync */
       if (typeof window.sfSetLoggedIn === 'function') window.sfSetLoggedIn(true);
@@ -373,6 +389,7 @@ window.sfLoggedIn = window.sfLoggedIn || false;
     var data = res.data || {};
     try {
       if (data.userId) localStorage.setItem('sf_user_id', data.userId);
+      if (data.userId) localStorage.setItem('sf_user_unique_id', data.userId);
       if (data.token) localStorage.setItem('sf_token', data.token);
       if (typeof window.sfSetLoggedIn === 'function') window.sfSetLoggedIn(true);
       else if (typeof window.sfIsLoggedIn === 'function') window.sfIsLoggedIn();
@@ -425,6 +442,8 @@ window.sfLoggedIn = window.sfLoggedIn || false;
     // not just at login — cheap insurance against the same "stale until
     // restart" symptom showing up elsewhere (e.g. after placing an order).
     try {
+      localStorage.setItem('sf_user_id', String(userId));
+      localStorage.setItem('sf_user_unique_id', String(userId));
       localStorage.setItem('sf_user_cache', JSON.stringify({
         data:      d,
         updatedAt: Date.now()
@@ -775,8 +794,10 @@ window.sfLoggedIn = window.sfLoggedIn || false;
     // Falls back gracefully on old DBs that have not yet run the migration.
     // ─────────────────────────────────────────────────────────────────────────
     var results = await Promise.all([
+      // Only the price is needed by the order form. Availability is frontend
+      // state and must never be derived from API credentials or lock flags.
       db.from('services_config')
-        .select('service_index, api_url, coin_cost')
+        .select('service_index, coin_cost')
         .order('service_index'),
       db.from('app_config')
         .select('key, value')
@@ -872,11 +893,11 @@ window.sfLoggedIn = window.sfLoggedIn || false;
     }
 
     var services = (svcRes.data || []).map(function (s) {
-      var configured = !!(s.api_url && s.api_url.trim() !== '' && s.coin_cost > 0);
       return {
         serviceIndex: s.service_index,
         coinCost:     s.coin_cost,
-        isAvailable:  configured
+        enabled:      true,
+        isAvailable:  true
       };
     });
 
@@ -908,6 +929,18 @@ window.sfLoggedIn = window.sfLoggedIn || false;
 
     // Cache globally so index.html patches can reference them without re-fetching
     try { window.__sfVideoUrl = videoUrl; window.__sfCpaLeadUrl = cpaLeadUrl; } catch (_) {}
+    try {
+      window.__sfStaticServices = {
+        services: services,
+        offerwallUrl: offerwallUrl,
+        cpaLeadUrl: cpaLeadUrl,
+        videoUrl: videoUrl
+      };
+      localStorage.setItem('sf_services_cache', JSON.stringify({
+        data: window.__sfStaticServices,
+        updatedAt: Date.now()
+      }));
+    } catch (_) {}
     try {
       window.dispatchEvent(new CustomEvent('sf-services-ready', {
         detail: { videoUrl: videoUrl, cpaLeadUrl: cpaLeadUrl }
@@ -1134,7 +1167,6 @@ window.sfLoggedIn = window.sfLoggedIn || false;
     });
   }
 
-  var API_CACHE_MAX_AGE = 30000;
   var _routeRefreshes = Object.create(null);
 
   function refreshCachedRoute(url, init) {
@@ -1163,19 +1195,24 @@ window.sfLoggedIn = window.sfLoggedIn || false;
     if (url.startsWith('/api/')) {
       try {
         if (method === 'GET') {
-          var cached = readCachedApiData(url);
+          var cached = readCachedApiData(url) || readCachedUserData(url);
           if (cached) {
-            var age = Date.now() - (cached.updatedAt || 0);
-            if (age <= API_CACHE_MAX_AGE) {
-              refreshCachedRoute(url, init);
-              return jsonRes(cached.data);
-            }
+            // A tab switch must be a local read. No background revalidation:
+            // the next Supabase request is reserved for an explicit mutation
+            // or a critical first-time user-data load.
+            return jsonRes(cached.data);
           }
         } else {
-          // A successful write changes the profile/order/service views. Clear
-          // the in-memory cache immediately; the persisted copy is flushed
-          // during idle time and never blocks the tap that initiated the write.
-          clearViewCache();
+          // Login/recovery changes the active account. Order submission is
+          // the only normal data mutation that invalidates cached tab views.
+          if (url === '/api/auth/login' ||
+              url === '/api/auth/recover' ||
+              url === '/api/orders') {
+            clearViewCache();
+            if (url === '/api/auth/login' || url === '/api/auth/recover') {
+              try { localStorage.removeItem('sf_user_cache'); } catch (_) {}
+            }
+          }
         }
 
         // Force the lower-level WebView fetch wrapper to await a bounded

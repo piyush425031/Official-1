@@ -623,6 +623,43 @@ window.APP_VERSION = APP_VERSION;
           'onClick:()=>{h(!1),window.__sfOpenChoice2&&window.__sfOpenChoice2(Wurl2)},onKeyDown:e=>{e.key==="Enter"&&(h(!1),window.__sfOpenChoice2&&window.__sfOpenChoice2(Wurl2))}'
         )
         /*
+         * Services still load once so prices and public offerwall URLs are
+         * available. The fetch layer below serves that result locally after
+         * the first response, and the lock branch is removed separately.
+         */
+        .replace(
+          'const n=ka()||"",{data:r}=ao(n),{data:i}=eO();',
+          'const n=localStorage.getItem("sf_user_unique_id")||localStorage.getItem("sf_user_id")||ka()||"",{data:r}=ao(n),{data:i}=eO();'
+        )
+        .replace(
+          'const n=ka()||"",{data:r}=ao(n),{data:i}=aO();',
+          'const n=localStorage.getItem("sf_user_unique_id")||localStorage.getItem("sf_user_id")||ka()||"",{data:r}=ao(n),{data:i}=aO();'
+        )
+        .replace(
+          'const n=ka()||"",{data:r,isLoading:i,isError:s,refetch:u}=aO(),',
+          'const n=localStorage.getItem("sf_user_unique_id")||localStorage.getItem("sf_user_id")||ka()||"",{data:r,isLoading:i,isError:s,refetch:u}=aO(),'
+        )
+        .replace(
+          'const u=i?.services?.find(d=>d.serviceIndex===s.index),f=!u||!u.isAvailable;',
+          'const u=i?.services?.find(d=>d.serviceIndex===s.index)||{serviceIndex:s.index,coinCost:0,enabled:true,isAvailable:true},f=!1;'
+        )
+        .replace(
+          '${i?"opacity-70 bg-card/20":"bg-card/40 backdrop-blur-md shadow-[0_4px_20px_rgba(212,175,55,0.05)]"}',
+          'bg-card/40 backdrop-blur-md shadow-[0_4px_20px_rgba(212,175,55,0.05)]'
+        )
+        .replace(
+          'i&&v.jsx(ef,{className:"w-5 h-5 text-muted-foreground shrink-0}),',
+          'null,'
+        )
+        .replace(
+          'children:i?v.jsxs("div",{className:"flex items-center gap-2 p-3 bg-background/50 rounded-lg text-muted-foreground text-sm border border-border/50",children:[v.jsx("span",{children:"🔒"}),v.jsx("span",{children:"यह सर्विस अभी बंद है।"})]}):v.jsxs(v.Fragment,{children:',
+          'children:v.jsxs(v.Fragment,{children:'
+        )
+        .replace(
+          'nO,{service:s,config:u,isLocked:f,userId:n,userCoins:r?.coins??0}',
+          'nO,{service:s,config:u,userId:n,userCoins:r?.coins??0}'
+        )
+        /*
          * Keep the authenticated layout mounted for all app tabs. Only the
          * route view changes, inside a React transition, so the header and
          * bottom navigation never disappear during rapid hash changes.
