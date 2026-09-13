@@ -46,7 +46,7 @@ jobs:
           mkdir -p dist
           cp -r *.html *.js *.css assets public dist/ 2>/dev/null || true
 
-          # Inject Base Tag & Auto In-App Tab Script inside index.html for Android Webview
+          # Inject Full Screen CSS & Auto In-App Tab Script inside index.html
           node -e '
             const fs = require("fs");
             if (fs.existsSync("dist/index.html")) {
@@ -54,6 +54,23 @@ jobs:
               if (!html.includes("<base")) {
                 html = html.replace("<head>", "<head><base href=\"./\">");
               }
+
+              // Forced CSS to make Choice 2 & Embed Containers 100% Full Screen
+              const fullScreenCSS = `
+                <style>
+                  iframe, embed, object, .iframe-container, #timewall-container, div[class*="offerwall"], div[class*="choice2"] {
+                    width: 100% !important;
+                    height: calc(100vh - 70px) !important;
+                    min-height: 85vh !important;
+                    border: none !important;
+                    display: block !important;
+                  }
+                  body, html {
+                    overflow-x: hidden !important;
+                  }
+                </style>
+              `;
+
               // Script to capture external clicks and open inside App
               const inAppScript = `
                 <script>
@@ -71,7 +88,8 @@ jobs:
                   }, true);
                 </script>
               `;
-              html = html.replace("</head>", inAppScript + "</head>");
+
+              html = html.replace("</head>", fullScreenCSS + inAppScript + "</head>");
               fs.writeFileSync("dist/index.html", html);
             }
           '
