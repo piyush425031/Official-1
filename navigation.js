@@ -577,18 +577,22 @@ window.APP_VERSION = APP_VERSION;
           'onClick:()=>{h(!1),window.__sfOpenInAppBrowser&&window.__sfOpenInAppBrowser(S)},onKeyDown:e=>{e.key==="Enter"&&(h(!1),window.__sfOpenInAppBrowser&&window.__sfOpenInAppBrowser(S))}'
         )
          /*
-          * Keep the Offerwall inside the app chrome. The old inset-0 layer
-          * covered the header and bottom nav, and the cleanup observer then
-          * removed broad fixed/backdrop nodes when Back was tapped.
+          * Choice 2 is a dedicated viewport modal. Keep the generated
+          * offerwall markup behind one fixed shell with one small close control
+          * and the CPALead iframe as its only content area.
           */
          .replace(
            'Wsel!==null?v.jsxs("div",{className:"fixed inset-0 z-[9999] bg-white flex flex-col",',
-           'Wsel!==null?v.jsxs("div",{className:"sf-offerwall-overlay fixed z-[9999] bg-white flex flex-col",'
+           'Wsel!==null?v.jsxs("div",{className:"sf-offerwall-modal",'
          )
          .replace(
            'Wsel===1&&v.jsx("div",{style:{position:"absolute",top:0,left:0,right:0,height:"52px",background:"#0f1523",zIndex:20,pointerEvents:"none"}}),',
            'null,'
          )
+          .replace(
+            'd&&v.jsxs("div",{className:"absolute inset-0 z-10 bg-white flex flex-col items-center justify-center gap-3 pointer-events-none",children:[v.jsx(Sv,{className:"w-10 h-10 text-blue-500 animate-spin"}),v.jsx("p",{className:"text-gray-500 text-sm",children:"Offers लोड हो रहे हैं..."})]}),',
+            'null,'
+          )
          .replace(
            'style:{position:"absolute",top:Wsel===1?"58px":"8px",left:"10px"',
            'style:{position:"absolute",top:"10px",left:"10px"'
@@ -598,12 +602,12 @@ window.APP_VERSION = APP_VERSION;
           'v.jsx("button",{type:"button",className:"sf-offerwall-back","aria-label":"Close offerwall",onClick:()=>{Wset(null);h(!1)},style:{position:"absolute"'
         )
          .replace(
-           'v.jsx("button",{type:"button",className:"sf-offerwall-back","aria-label":"Close offerwall",onClick:()=>{Wset(null);h(!1)},style:{position:"absolute"',
-           'v.jsxs("div",{className:"sf-offerwall-header",children:[v.jsx("button",{type:"button",className:"sf-offerwall-back","aria-label":"Close offerwall",onClick:()=>{Wset(null);h(!1)},style:{position:"absolute"'
+           'v.jsxs("div",{className:"sf-offerwall-header",children:[v.jsx("button",{type:"button",className:"sf-offerwall-back","aria-label":"Close offerwall",onClick:()=>{Wset(null);h(!1)},style:{position:"absolute"',
+           'v.jsx("button",{type:"button",className:"sf-offerwall-back","aria-label":"Close offerwall",onClick:()=>{Wset(null);h(!1)},style:{position:"absolute"'
          )
          .replace(
-           'children:"✕ Back"}),v.jsx("iframe"',
-           'children:"‹ Back"}),v.jsx("span",{className:"sf-offerwall-title",children:"Offers"}),]}),v.jsx("iframe"'
+           'children:"‹ Back"}),v.jsx("span",{className:"sf-offerwall-title",children:"Offers"}),]}),v.jsx("iframe"',
+           'children:"‹ Back"}),v.jsx("iframe"'
          )
         /*
          * Keep the authenticated layout mounted for all app tabs. Only the
@@ -636,10 +640,13 @@ window.APP_VERSION = APP_VERSION;
            'const JA=(window.__SF_BASE_PATH||"/").replace(/\\/+$/,"")+"/assets/'
          )
         .replace(
-          /https:\/\/star-follower\.netlify\.app`;window\.open\(`https:\/\/wa\.me\/\?text=\$\{encodeURIComponent\(q\)\}`,"_blank"\)/,
+          /https:\/\/star-follower\.netlify\.app`;window\.open\(`https:\/\/[^`]+`,"_blank"\)/,
           'https://star-follower.github.io/Official/`;window.__sfShare(q,"Star Follower")'
         )
-        .replace(' WhatsApp पर शेयर करें', ' दोस्तों के साथ शेयर करें')
+        .replace(
+          /v\.jsxs\(qt,\{onClick:_,className:"w-full bg-\[#25D366\][\s\S]*?children:\[[\s\S]*?\]\}\)/,
+          'v.jsx(qt,{onClick:_,className:"w-full bg-primary text-primary-foreground font-bold h-12",children:"दोस्तों के साथ शेयर करें"})'
+        )
         .replace(
           'N=async E=>{E.preventDefault();const A=h.trim();if(A){b(!0)',
           'N=async E=>{E.preventDefault();const A=h.trim();if(!/^[A-Za-z0-9]{6}$/.test(A)){S({variant:"destructive",title:"कृपया 6-अंकीय Recovery Code डालें!"});return}if(A){b(!0)'
