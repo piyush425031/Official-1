@@ -35,8 +35,8 @@ jobs:
           rm -rf dist android capacitor.config.json
           pnpm install --no-frozen-lockfile
           
-          # Install In-App Browser Plugin so TimeWall opens inside App
-          pnpm add -w @capacitor/core @capacitor/android @capacitor/browser
+          # Install Plugins: In-App Browser + Native Android Share Plugin
+          pnpm add -w @capacitor/core @capacitor/android @capacitor/browser @capacitor/share
           pnpm add -w -D @capacitor/cli
 
           # Force relative paths in Vite build
@@ -46,7 +46,7 @@ jobs:
           mkdir -p dist
           cp -r *.html *.js *.css assets public dist/ 2>/dev/null || true
 
-          # Inject Base Tag & Auto In-App Tab Script inside index.html for Android Webview
+          # Inject CSS & Native Android WebShare polyfill inside index.html
           node -e '
             const fs = require("fs");
             if (fs.existsSync("dist/index.html")) {
@@ -54,14 +54,48 @@ jobs:
               if (!html.includes("<base")) {
                 html = html.replace("<head>", "<head><base href=\"./\">");
               }
-              // Script to capture external clicks and open inside App
-              const inAppScript = `
+
+              // Forced CSS for Full Height Choice 2
+              const fullScreenCSS = `
+                <style>
+                  iframe, embed, object, .iframe-container, #timewall-container, div[class*="offerwall"], div[class*="choice2"] {
+                    width: 100% !important;
+                    height: calc(100vh - 70px) !important;
+                    min-height: 85vh !important;
+                    border: none !important;
+                    display: block !important;
+                  }
+                  body, html {
+                    overflow-x: hidden !important;
+                  }
+                </style>
+              `;
+
+              // Native Android Share Sheet + In-App Browser Auto Capture Script
+              const nativeShareScript = `
                 <script>
+                  // Override navigator.share for Android Native Share Sheet
+                  if (window.Capacitor && window.Capacitor.Plugins) {
+                    const originalShare = navigator.share;
+                    navigator.share = function(shareData) {
+                      if (window.Capacitor.Plugins.Share) {
+                        return window.Capacitor.Plugins.Share.share({
+                          title: shareData.title || "Star Follower",
+                          text: shareData.text || "",
+                          url: shareData.url || window.location.href,
+                          dialogTitle: "Share via"
+                        });
+                      }
+                      return originalShare ? originalShare.apply(navigator, arguments) : Promise.reject("Not supported");
+                    };
+                  }
+
+                  // Handle External Links
                   document.addEventListener("click", function(e) {
                     const target = e.target.closest("a, button");
                     if (target) {
                       const href = target.getAttribute("href") || target.getAttribute("onclick");
-                      if (href && (href.includes("timewall") || href.includes("http"))) {
+                      if (href && (href.includes("timewall") || href.includes("http")) && !href.includes("whatsapp")) {
                         if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser) {
                           e.preventDefault();
                           window.Capacitor.Plugins.Browser.open({ url: href });
@@ -71,15 +105,16 @@ jobs:
                   }, true);
                 </script>
               `;
-              html = html.replace("</head>", inAppScript + "</head>");
+
+              html = html.replace("</head>", fullScreenCSS + nativeShareScript + "</head>");
               fs.writeFileSync("dist/index.html", html);
             }
           '
 
-          # Capacitor initialization with cleartext/browser support
+          # Capacitor initialization
           npx cap init "Star Follower" "com.starfollower.official" --web-dir dist
           
-          # Enable Cleartext Traffic and Allow external links inside Android Webview
+          # Enable Cleartext Traffic and Navigation
           node -e '
             const fs = require("fs");
             if (fs.existsSync("capacitor.config.json")) {
@@ -91,7 +126,7 @@ jobs:
 
           npx cap add android
           
-          # Inject Allow UsesCleartextTraffic inside AndroidManifest.xml
+          # Inject Permissions in AndroidManifest.xml
           node -e '
             const fs = require("fs");
             const manifestPath = "android/app/src/main/AndroidManifest.xml";

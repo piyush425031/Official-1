@@ -21,6 +21,48 @@ window.APP_VERSION = APP_VERSION;
  (function (window, document) {
   'use strict';
 
+    /*
+     * Choice 2 is deliberately plain DOM. The offerwall URL is assigned only
+     * when the user taps the card, and Back clears it before hiding the modal.
+     */
+    function initChoice2Modal() {
+      var modal = document.getElementById('sf-choice2-modal');
+      var frame = document.getElementById('sf-choice2-frame');
+      var back = document.getElementById('sf-choice2-back');
+      if (!modal || !frame || !back) return;
+
+      function closeChoice2() {
+        frame.removeAttribute('src');
+        modal.style.display = 'none';
+        modal.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('sf-choice2-open');
+      }
+
+      window.__sfOpenChoice2 = function (url) {
+        var target = String(url || '').trim();
+        if (!/^https?:\/\//i.test(target)) return false;
+        frame.src = target;
+        modal.style.display = 'block';
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('sf-choice2-open');
+        return true;
+      };
+
+      window.__sfCloseChoice2 = closeChoice2;
+      back.addEventListener('click', closeChoice2);
+      document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape' && modal.style.display !== 'none') {
+          closeChoice2();
+        }
+      });
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initChoice2Modal, { once: true });
+    } else {
+      initChoice2Modal();
+    }
+
    function compareAppVersions(left, right) {
      var a = String(left || '').replace(/^v/i, '').split('.');
      var b = String(right || '').replace(/^v/i, '').split('.');
@@ -569,46 +611,17 @@ window.APP_VERSION = APP_VERSION;
         /*
          * Choice 1 must never mount the iframe-based offerwall state. Open
          * its already-substituted TimeWall URL directly through the shared
-         * Capacitor Browser adapter. Choice 2 intentionally keeps the
-         * Wsel=2 offerwall path below.
+         * Capacitor Browser adapter. Choice 2 uses the plain DOM modal
+         * defined in index.html instead of the bundle's Wsel state.
          */
         .replace(
           'onClick:()=>{h(!0);Wset(1)},onKeyDown:e=>{e.key==="Enter"&&(h(!0),Wset(1))}',
           'onClick:()=>{h(!1),window.__sfOpenInAppBrowser&&window.__sfOpenInAppBrowser(S)},onKeyDown:e=>{e.key==="Enter"&&(h(!1),window.__sfOpenInAppBrowser&&window.__sfOpenInAppBrowser(S))}'
         )
-         /*
-          * Choice 2 is a dedicated viewport modal. Keep the generated
-          * offerwall markup behind one fixed shell with one small close control
-          * and the CPALead iframe as its only content area.
-          */
-         .replace(
-           'Wsel!==null?v.jsxs("div",{className:"fixed inset-0 z-[9999] bg-white flex flex-col",',
-           'Wsel!==null?v.jsxs("div",{className:"sf-offerwall-modal",'
-         )
-         .replace(
-           'Wsel===1&&v.jsx("div",{style:{position:"absolute",top:0,left:0,right:0,height:"52px",background:"#0f1523",zIndex:20,pointerEvents:"none"}}),',
-           'null,'
-         )
-          .replace(
-            'd&&v.jsxs("div",{className:"absolute inset-0 z-10 bg-white flex flex-col items-center justify-center gap-3 pointer-events-none",children:[v.jsx(Sv,{className:"w-10 h-10 text-blue-500 animate-spin"}),v.jsx("p",{className:"text-gray-500 text-sm",children:"Offers लोड हो रहे हैं..."})]}),',
-            'null,'
-          )
-         .replace(
-           'style:{position:"absolute",top:Wsel===1?"58px":"8px",left:"10px"',
-           'style:{position:"absolute",top:"10px",left:"10px"'
-         )
         .replace(
-          'v.jsx("button",{onClick:()=>{Wset(null);h(!1)},style:{position:"absolute"',
-          'v.jsx("button",{type:"button",className:"sf-offerwall-back","aria-label":"Close offerwall",onClick:()=>{Wset(null);h(!1)},style:{position:"absolute"'
+          'onClick:()=>{h(!0);Wset(2)},onKeyDown:e=>{e.key==="Enter"&&(h(!0),Wset(2))}',
+          'onClick:()=>{h(!1),window.__sfOpenChoice2&&window.__sfOpenChoice2(Wurl2)},onKeyDown:e=>{e.key==="Enter"&&(h(!1),window.__sfOpenChoice2&&window.__sfOpenChoice2(Wurl2))}'
         )
-         .replace(
-           'v.jsxs("div",{className:"sf-offerwall-header",children:[v.jsx("button",{type:"button",className:"sf-offerwall-back","aria-label":"Close offerwall",onClick:()=>{Wset(null);h(!1)},style:{position:"absolute"',
-           'v.jsx("button",{type:"button",className:"sf-offerwall-back","aria-label":"Close offerwall",onClick:()=>{Wset(null);h(!1)},style:{position:"absolute"'
-         )
-         .replace(
-           'children:"‹ Back"}),v.jsx("span",{className:"sf-offerwall-title",children:"Offers"}),]}),v.jsx("iframe"',
-           'children:"‹ Back"}),v.jsx("iframe"'
-         )
         /*
          * Keep the authenticated layout mounted for all app tabs. Only the
          * route view changes, inside a React transition, so the header and
