@@ -33,37 +33,20 @@
     return c ? SHARE_BASE + '?ref=' + encodeURIComponent(c) : SHARE_BASE;
   };
 
-  /* Native share handler — Android WebView bridge first, then the
-     Web Share API, then a WhatsApp fallback (the original
-     behaviour of this app before the native bridge existed). */
+  /* Native share handler with no redirect or custom-scheme fallback. */
   if (typeof window.__sfShare !== 'function') {
     window.__sfShare = function (text, title) {
       var message = String(text == null ? '' : text);
-
+      if (typeof navigator.share !== 'function') return;
       try {
-        var bridge = window.AndroidShare || window.SFAndroid || window.Android;
-        if (bridge && typeof bridge.share === 'function') {
-          bridge.share(message, title || 'Star Follower');
-          return;
+        var result = navigator.share({
+          title: title || 'Star Follower',
+          text: message
+        });
+        if (result && typeof result.catch === 'function') {
+          result.catch(function () {});
         }
       } catch (e) {}
-
-      try {
-        if (navigator.share) {
-          navigator.share({ title: title || 'Star Follower', text: message })
-            .catch(function () {});
-          return;
-        }
-      } catch (e) {}
-
-       try {
-         if (typeof window.__sfShare === 'function') {
-           window.__sfShare(message, title || 'Star Follower');
-         } else {
-           window.location.href = 'whatsapp://send?text=' +
-             encodeURIComponent(message);
-         }
-       } catch (e) {}
     };
   }
 }(window));
