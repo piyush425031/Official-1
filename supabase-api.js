@@ -95,6 +95,7 @@ window.sfLoggedIn = window.sfLoggedIn || false;
   var dbInitAttempts = 0;
   var DB_INIT_MAX_ATTEMPTS = 20;
   var appSettingsChecked = false;
+  var startupProfileSynced = false;
   var dbReadyResolve;
   var dbReady = new Promise(function (resolve) {
     dbReadyResolve = resolve;
@@ -111,16 +112,23 @@ window.sfLoggedIn = window.sfLoggedIn || false;
         .select('*')
         .limit(20);
       var rows = result && Array.isArray(result.data) ? result.data : [];
+      var allSettings = {};
+      rows.forEach(function (row) {
+        if (!row) return;
+        if (row.key) allSettings[String(row.key)] = row.value;
+        Object.keys(row).forEach(function (key) {
+          if (key !== 'id' && key !== 'key' && key !== 'value' &&
+              row[key] !== undefined && row[key] !== null) {
+            allSettings[key] = row[key];
+          }
+        });
+      });
       var settings = rows.find(function (row) {
         return row && (row.latest_version || row.update_url ||
           row.is_mandatory !== undefined);
       }) || null;
       if (!settings) {
-        var keyValueSettings = {};
-        rows.forEach(function (row) {
-          if (!row || !row.key) return;
-          keyValueSettings[String(row.key)] = row.value;
-        });
+        var keyValueSettings = allSettings;
         if (keyValueSettings.latest_version || keyValueSettings.update_url ||
             keyValueSettings.is_mandatory !== undefined) {
           settings = keyValueSettings;
@@ -129,6 +137,35 @@ window.sfLoggedIn = window.sfLoggedIn || false;
       if (!result.error && settings &&
           typeof window.__sfApplyUpdateSettings === 'function') {
         window.__sfApplyUpdateSettings(settings);
+      }
+      if (!result.error) {
+        var cachedServices = readLocalServicesCache();
+        var offerwallUrl = allSettings.offerwall_url ||
+          allSettings.choice_1_url || cachedServices.offerwallUrl || '';
+        var cpaLeadUrl = allSettings.cpa_lead_url ||
+          allSettings.choice_2_url || cachedServices.cpaLeadUrl || '';
+        var freshServices = Object.assign({}, cachedServices, {
+          offerwallUrl: offerwallUrl,
+          cpaLeadUrl: cpaLeadUrl
+        });
+        window.__sfStaticServices = freshServices;
+        try {
+          localStorage.setItem('sf_services_cache', JSON.stringify({
+            data: freshServices,
+            updatedAt: Date.now()
+          }));
+        } catch (e) {}
+        var servicesCache = readViewCache();
+        servicesCache['/api/services'] = {
+          data: freshServices,
+          updatedAt: Date.now()
+        };
+        writeViewCache(servicesCache);
+        try {
+          window.dispatchEvent(new CustomEvent('sf-services-synced', {
+            detail: freshServices
+          }));
+        } catch (e) {}
       }
     } catch (e) {
       // A missing table or restrictive policy must never block app startup.
@@ -142,7 +179,12 @@ window.sfLoggedIn = window.sfLoggedIn || false;
     db = createSupabaseClient();
     window.__sfSupabaseClient = db;
     window.__sfSupabaseReady = !!db;
-    if (db) setTimeout(function () { loadAppSettings(db); }, 0);
+    if (db) {
+      setTimeout(function () {
+        loadAppSettings(db);
+        syncProfileOnStartup();
+      }, 0);
+    }
     if (db && typeof window.__sfAttachSupabaseAuth === 'function') {
       try { window.__sfAttachSupabaseAuth(db); } catch (e) {}
     }
@@ -335,6 +377,15 @@ window.sfLoggedIn = window.sfLoggedIn || false;
         data:      data,
         updatedAt: Date.now()
       }));
+      var userId = data.userId || data.id || localStorage.getItem('sf_user_id') || '';
+      if (userId) {
+        var cache = readViewCache();
+        cache['/api/user/' + userId] = {
+          data: data,
+          updatedAt: Date.now()
+        };
+        writeViewCache(cache);
+      }
       window.dispatchEvent(new CustomEvent('sf-profile-synced', {
         detail: { data: data, reason: reason || 'cache' }
       }));
@@ -403,6 +454,26 @@ window.sfLoggedIn = window.sfLoggedIn || false;
 
     publishProfile(data, reason);
     return data;
+  }
+
+  /*
+   * One authoritative profile query per document launch. Hash/tab navigation
+   * keeps the same document alive, so it cannot trigger another startup sync.
+   */
+  async function syncProfileOnStartup() {
+    if (startupProfileSynced || !db) return;
+    var token = '';
+    var userId = '';
+    try {
+      token = localStorage.getItem('sf_token') || '';
+      userId = localStorage.getItem('sf_user_id') || '';
+    } catch (e) {}
+    if (!token || !userId) return;
+    startupProfileSynced = true;
+    await syncFreshProfile({
+      token: token,
+      userId: userId
+    }, 'app-startup');
   }
 
   // ─── route handlers ──────────────────────────────────────────────────────────

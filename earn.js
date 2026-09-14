@@ -25,23 +25,23 @@
         return false;
       }
 
-      // ── Inject logged-in user UUID as &subid= ─────────────────────
+      // ── Inject logged-in user UUID as user_id ─────────────────────
       function injectSubid(href) {
         var uid = localStorage.getItem('sf_user_unique_id') ||
                   localStorage.getItem('sf_user_id') || '';
         if (!uid) return href;
         try {
           var u = new URL(href);
-          var existing = u.searchParams.get('subid') || '';
+          var existing = u.searchParams.get('user_id') || '';
           // Replace if absent or still a template placeholder
           if (!existing || /^\{.*\}$/.test(existing) || /^\[.*\]$/.test(existing)) {
-            u.searchParams.set('subid', uid);
+            u.searchParams.set('user_id', uid);
           }
           return u.toString();
         } catch (_) {
-          if (href.indexOf('subid=') === -1) {
+          if (href.indexOf('user_id=') === -1) {
             return href + (href.indexOf('?') === -1 ? '?' : '&') +
-                   'subid=' + encodeURIComponent(uid);
+                   'user_id=' + encodeURIComponent(uid);
           }
           return href;
         }

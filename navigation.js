@@ -749,19 +749,23 @@ window.APP_VERSION = APP_VERSION;
   function addUserId(rawUrl) {
     var href = String(rawUrl || "").trim();
     var uid = "";
-    try { uid = localStorage.getItem("sf_user_unique_id") || ""; } catch (e) {}
+    try {
+      uid = localStorage.getItem("sf_user_unique_id") ||
+        localStorage.getItem("sf_user_id") || "";
+    } catch (e) {}
     if (!uid) return href;
+    href = href.replace(/localhost/gi, window.location.hostname);
     href = href
       .replace(/\\{(?:user_?id|userid)\\}/gi, uid)
       .replace(/%7B(?:user_?id|userid)%7D/gi, encodeURIComponent(uid))
       .replace(/\\[(?:user_?id|userid)\\]/gi, uid);
     try {
       var parsed = new URL(href, window.location.href);
-      parsed.searchParams.set("subid", uid);
+      parsed.searchParams.set("user_id", uid);
       return parsed.toString();
     } catch (e) {
       return href + (href.indexOf("?") === -1 ? "?" : "&") +
-        "subid=" + encodeURIComponent(uid);
+        "user_id=" + encodeURIComponent(uid);
     }
   }
   function openChoice(kind, rawUrl) {
