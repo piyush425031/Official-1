@@ -608,6 +608,14 @@ window.APP_VERSION = APP_VERSION;
           'function aO(){return Gs({queryKey:["public-services"],queryFn:()=>qr("/api/services").then(n=>n.json()),staleTime:6e4})}',
           'function aO(){const n=window.__sfReadViewCache?window.__sfReadViewCache("/api/services",{services:[],offerwallUrl:"",cpaLeadUrl:"",videoUrl:""}):{data:{services:[],offerwallUrl:"",cpaLeadUrl:"",videoUrl:""},updatedAt:0};return Gs({queryKey:["public-services"],queryFn:()=>qr("/api/services").then(r=>r.json()),initialData:n.data,initialDataUpdatedAt:n.updatedAt,staleTime:0,refetchOnWindowFocus:!1,retry:1})}'
         )
+         /*
+          * Keep one global ordering warning at the very top of Services,
+          * before the title and all service listings.
+          */
+         .replace(
+           'function tO(){const n=ka()||"",{data:r}=ao(n),{data:i}=eO();return v.jsxs("div",{className:"flex flex-col gap-6",children:[',
+           'function tO(){const n=ka()||"",{data:r}=ao(n),{data:i}=eO();return v.jsxs("div",{className:"flex flex-col gap-6",children:[v.jsxs("div",{role:"status",className:"sf-services-public-notice",style:{background:"#007AFF",color:"#fff",borderRadius:"12px",padding:"12px 14px",display:"flex",alignItems:"flex-start",gap:"10px",boxShadow:"0 4px 14px rgba(0,122,255,0.22)"},children:[v.jsx("svg",{width:"20",height:"20",viewBox:"0 0 24 24",fill:"none",stroke:"currentColor",strokeWidth:"2",strokeLinecap:"round",strokeLinejoin:"round","aria-hidden":!0,className:"shrink-0 mt-0.5",children:[v.jsx("circle",{cx:"12",cy:"12",r:"9"}),v.jsx("path",{d:"M12 10v6"}),v.jsx("path",{d:"M12 7h.01"})]}),v.jsxs("p",{style:{margin:0,fontSize:"13px",lineHeight:"1.5",fontWeight:600},children:["ऑर्डर देने से पहले अपना इंस्टाग्राम अकाउंट Public ही रखें, यदि अकाउंट Private हुआ तो आपके Coins कट जाएंगे और ऑर्डर फेल हो जाएगा। ",v.jsx("span",{style:{display:"block",marginTop:"3px",fontWeight:500},children:"(Keep your Instagram account Public before ordering. Private account orders will fail and coins will be deducted.)"})]})]}),'
+         )
         /*
          * Choice 1 must never mount the iframe-based offerwall state. Open
          * its already-substituted TimeWall URL directly through the shared
@@ -695,7 +703,7 @@ window.APP_VERSION = APP_VERSION;
         )
         .replace(
           /v\.jsxs\(qt,\{onClick:_,className:"w-full bg-\[#25D366\][\s\S]*?children:\[[\s\S]*?\]\}\)/,
-          'v.jsx(qt,{onClick:_,className:"w-full bg-primary text-primary-foreground font-bold h-12",children:"दोस्तों के साथ शेयर करें"})'
+           'v.jsxs(qt,{onClick:_,className:"w-full bg-[#25D366] text-white hover:bg-[#20bd5a] font-bold h-12 shadow-[0_0_15px_rgba(37,211,102,0.3)]",children:[v.jsx(EE,{className:"w-5 h-5 mr-2"})," दोस्तों के साथ शेयर करें"]})'
         )
         .replace(
           'N=async E=>{E.preventDefault();const A=h.trim();if(A){b(!0)',
