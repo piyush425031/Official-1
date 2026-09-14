@@ -290,6 +290,22 @@ window.sfLoggedIn = window.sfLoggedIn || false;
     }
   }
 
+  function readLocalServicesCache() {
+    try {
+      var raw = localStorage.getItem('sf_services_cache');
+      var parsed = raw ? JSON.parse(raw) : null;
+      var data = parsed && parsed.data ? parsed.data : parsed;
+      if (data && typeof data === 'object') return data;
+    } catch (e) {}
+    try {
+      if (window.__sfStaticServices &&
+          typeof window.__sfStaticServices === 'object') {
+        return window.__sfStaticServices;
+      }
+    } catch (e) {}
+    return { services: [], offerwallUrl: '', cpaLeadUrl: '', videoUrl: '' };
+  }
+
   var _syncWindows = {};
   window.__sfCanSync = function (key, minimumWindowMs) {
     if (!minimumWindowMs || minimumWindowMs <= 0) return true;
@@ -415,6 +431,7 @@ window.sfLoggedIn = window.sfLoggedIn || false;
     var data = res.data || {};
     try {
       if (data.userId) localStorage.setItem('sf_user_id', data.userId);
+      if (data.userId) localStorage.setItem('sf_user_unique_id', data.userId);
       if (data.token) localStorage.setItem('sf_token', data.token);
       if (typeof window.sfIsLoggedIn === 'function') window.sfIsLoggedIn();
     } catch (e) {}
@@ -1194,6 +1211,21 @@ window.sfLoggedIn = window.sfLoggedIn || false;
 
     if (url.startsWith('/api/')) {
       try {
+        /*
+         * Earn never revalidates public services. It is rendered from the
+         * persisted cache by the route patch, but keep this transport guard
+         * as a second layer for any legacy component that still asks for
+         * /api/services while the Earn route is active.
+         */
+        var isEarnRoute = false;
+        try {
+          isEarnRoute = typeof window.__sfRoutePath === 'function' &&
+            window.__sfRoutePath() === '/earn';
+        } catch (e) {}
+        if (method === 'GET' && url === '/api/services' && isEarnRoute) {
+          return jsonRes(readLocalServicesCache());
+        }
+
         if (method === 'GET') {
           var cached = readCachedApiData(url) || readCachedUserData(url);
           if (cached) {

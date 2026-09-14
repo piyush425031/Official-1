@@ -709,6 +709,157 @@ window.APP_VERSION = APP_VERSION;
           'https://star-follower.netlify.app',
           'https://star-follower.github.io/Official/'
         );
+
+       /*
+        * Earn is intentionally local-only. The imported bundle's original
+        * Earn component uses a public-services query and hides both choices
+        * whenever that query is loading or returns an empty URL. That made
+        * the cards disappear after a short delay on a slow/offline session.
+        *
+        * Replace only that route component at import time. The cards are
+        * always rendered, their URLs come from the locally persisted services
+        * cache, and the unique ID is read from localStorage at click time.
+        * No Supabase-backed query is mounted by this route.
+        */
+       var earnStart = sfBundle.indexOf('function rO(){');
+       var earnEnd = sfBundle.indexOf('const lO=', earnStart);
+       if (earnStart !== -1 && earnEnd > earnStart) {
+         var localEarnComponent = `function rO(){
+  var cached = {};
+  try {
+    var raw = localStorage.getItem("sf_services_cache");
+    var parsed = raw ? JSON.parse(raw) : null;
+    cached = parsed && parsed.data ? parsed.data : (parsed || {});
+  } catch (e) {}
+  if ((!cached.offerwallUrl && !cached.cpaLeadUrl) && window.__sfStaticServices) {
+    cached = window.__sfStaticServices;
+  }
+  function addUserId(rawUrl) {
+    var href = String(rawUrl || "").trim();
+    var uid = "";
+    try { uid = localStorage.getItem("sf_user_unique_id") || ""; } catch (e) {}
+    if (!uid) return href;
+    href = href
+      .replace(/\\{(?:user_?id|userid)\\}/gi, uid)
+      .replace(/%7B(?:user_?id|userid)%7D/gi, encodeURIComponent(uid))
+      .replace(/\\[(?:user_?id|userid)\\]/gi, uid);
+    try {
+      var parsed = new URL(href, window.location.href);
+      parsed.searchParams.set("subid", uid);
+      return parsed.toString();
+    } catch (e) {
+      return href + (href.indexOf("?") === -1 ? "?" : "&") +
+        "subid=" + encodeURIComponent(uid);
+    }
+  }
+  function openChoice(kind, rawUrl) {
+    var target = addUserId(rawUrl);
+    if (!/^https?:\\/\\//i.test(target)) return;
+    if (kind === 1) {
+      if (typeof window.__sfOpenInAppBrowser === "function") {
+        window.__sfOpenInAppBrowser(target);
+      }
+    } else if (typeof window.__sfOpenChoice2 === "function") {
+      window.__sfOpenChoice2(target);
+    }
+  }
+  function choiceCard(kind, title, badge, description, accent, rawUrl, icon) {
+    var activate = function () { openChoice(kind, rawUrl); };
+    var keyboard = function (event) {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        activate();
+      }
+    };
+    return v.jsxs("div", {
+      role: "button",
+      tabIndex: 0,
+      "data-sf-earn-choice": String(kind),
+      onClick: activate,
+      onKeyDown: keyboard,
+      style: {
+        background: kind === 1
+          ? "linear-gradient(135deg,#1a1200 0%,#2a1f00 40%,#0a0800 100%)"
+          : "linear-gradient(135deg,#001a0d 0%,#002a18 40%,#000a05 100%)",
+        boxShadow: kind === 1
+          ? "0 0 24px 4px rgba(250,204,21,0.18),0 4px 24px rgba(0,0,0,0.6)"
+          : "0 0 18px 2px rgba(16,185,129,0.12),0 4px 20px rgba(0,0,0,0.5)",
+        border: kind === 1
+          ? "2px solid rgba(250,204,21,0.7)"
+          : "2px solid rgba(16,185,129,0.5)"
+      },
+      className: "sf-earn-choice-card cursor-pointer rounded-2xl p-5 flex flex-col gap-3 active:scale-[0.98] transition-all select-none w-full",
+      children: [
+        v.jsxs("div", {
+          className: "flex items-center justify-between gap-2 flex-wrap",
+          children: [
+            v.jsxs("span", {
+              className: kind === 1
+                ? "flex items-center gap-2 text-xl font-extrabold text-yellow-300"
+                : "flex items-center gap-2 text-xl font-extrabold text-emerald-300",
+              children: [icon + " ", title]
+            }),
+            v.jsx("span", {
+              style: {
+                background: accent,
+                color: "#000",
+                fontSize: "11px",
+                fontWeight: 800,
+                padding: "4px 12px",
+                borderRadius: "999px",
+                whiteSpace: "nowrap",
+                letterSpacing: "0.03em"
+              },
+              children: badge
+            })
+          ]
+        }),
+        v.jsx("p", {
+          style: {
+            color: kind === 1 ? "rgba(253,230,138,0.85)" : "rgba(167,243,208,0.85)",
+            fontSize: "13px",
+            lineHeight: "1.5"
+          },
+          children: description
+        }),
+        v.jsx("div", {
+          style: {
+            background: accent,
+            color: "#000",
+            fontWeight: 800,
+            fontSize: "13px",
+            textAlign: "center",
+            padding: "9px",
+            borderRadius: "10px",
+            letterSpacing: "0.04em"
+          },
+          children: "अभी शुरू करें →"
+        })
+      ]
+    });
+  }
+  return v.jsxs("div", {
+    className: "sf-earn-main flex flex-col gap-5 px-3 pt-4 pb-10 w-full",
+    children: [
+      v.jsxs("div", {
+        className: "text-center mb-1",
+        children: [
+          v.jsx("h2", { className: "text-xl font-bold text-primary", children: "Coins कमाएं" }),
+          v.jsx("p", { className: "text-muted-foreground text-sm mt-1", children: "नीचे से अपना तरीका चुनें 👇" })
+        ]
+      }),
+      choiceCard(1, "Choice 1", "KING CHOICE 👑",
+        "सबसे आसान टास्क, डेली बोनस और हर 2 घंटे में बोनस कॉइन्स पाएं 👑",
+        "linear-gradient(90deg,#f59e0b,#fbbf24)", cached.offerwallUrl, "👑"),
+      choiceCard(2, "Choice 2", "Instant Coins / तुरंत कॉइन्स",
+        "तुरंत coins पाएं — instant reward offers, quick & easy",
+        "linear-gradient(90deg,#10b981,#34d399)", cached.cpaLeadUrl, "⚡")
+    ]
+  });
+}`;
+         sfBundle = sfBundle.slice(0, earnStart) + localEarnComponent + sfBundle.slice(earnEnd);
+       }
+
       var sfBundleBlob = URL.createObjectURL(
         new Blob([sfBundle], { type: 'text/javascript' })
       );
@@ -760,7 +911,7 @@ window.APP_VERSION = APP_VERSION;
 
       document.getElementById('sf-logout-btn').addEventListener('click', function () {
         /* Clear all auth keys */
-        ['sf_user_id','sf_token'].forEach(function (k) { localStorage.removeItem(k); });
+         ['sf_user_id','sf_user_unique_id','sf_token'].forEach(function (k) { localStorage.removeItem(k); });
         /* logout transition → global flag off */
         if (typeof window.sfSetLoggedIn === 'function') window.sfSetLoggedIn(false);
         else window.sfLoggedIn = false;

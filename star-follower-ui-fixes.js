@@ -186,11 +186,25 @@
     }
     chip.classList.add('sf-header-coins');
 
-    getCurrentUser().then(function (user) {
+    function applyCoins(user) {
       if (!user || user.coins == null) return;
       var value = chip.querySelector('[data-sf-coins-value]') || chip.querySelector('span:last-child');
       if (value) value.textContent = String(user.coins);
-    });
+    }
+
+    /*
+     * Earn is an instant, local-only route. Do not let the shared header
+     * refresh turn opening Earn into an /api/user Supabase request.
+     */
+    if (getAppRoutePath() === '/earn') {
+      try {
+        var cached = JSON.parse(localStorage.getItem('sf_user_cache') || 'null');
+        applyCoins(cached && cached.data ? cached.data : cached);
+      } catch (e) {}
+      return;
+    }
+
+    getCurrentUser().then(applyCoins);
   }
 
   function fetchTutorialVideoUrl() {
