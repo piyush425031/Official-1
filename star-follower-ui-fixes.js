@@ -66,17 +66,18 @@
   }
 
   function getCurrentUser() {
-    var userId = localStorage.getItem('sf_user_id');
-    var token = localStorage.getItem('sf_token');
-    if (!userId || !token) return Promise.resolve(null);
+    /*
+     * Header decoration is not a data-sync trigger. Read the profile that
+     * login/order/postback handlers already placed in localStorage instead of
+     * starting another /api/user request whenever a route is enhanced.
+     */
     if (!userRequest) {
-      userRequest = fetch('/api/user/' + encodeURIComponent(userId), {
-        headers: { Authorization: 'Bearer ' + token }
-      }).then(function (response) {
-        return response.ok ? response.json() : null;
-      }).catch(function () {
-        return null;
-      });
+      try {
+        var cached = JSON.parse(localStorage.getItem('sf_user_cache') || 'null');
+        userRequest = Promise.resolve(cached && cached.data ? cached.data : cached);
+      } catch (e) {
+        userRequest = Promise.resolve(null);
+      }
     }
     return userRequest;
   }
@@ -514,6 +515,10 @@
     });
     window.addEventListener('locationchange', scheduleEnhancements, { passive: true });
     window.addEventListener('hashchange', scheduleEnhancements, { passive: true });
+    window.addEventListener('sf-profile-synced', function () {
+      userRequest = null;
+      scheduleEnhancements();
+    }, { passive: true });
     document.addEventListener('visibilitychange', function () {
       if (!document.hidden) scheduleEnhancements();
     }, { passive: true });

@@ -594,20 +594,24 @@ window.APP_VERSION = APP_VERSION;
          */
         .replace(
           'function ao(n,r){const i=MR(n);return{...Gs(i),queryKey:i.queryKey}}',
-          'function ao(n,r){const i=MR(n),s=window.__sfReadViewCache?window.__sfReadViewCache(NR(n),{coins:0,totalOrders:0,successfulOrders:0,referrals:0,referralCode:"",referredBy:null,createdAt:"1970-01-01T00:00:00.000Z"}):{data:{coins:0,totalOrders:0,successfulOrders:0,referrals:0,successfulOrders:0,referralCode:"",referredBy:null,createdAt:"1970-01-01T00:00:00.000Z"},updatedAt:0};return{...Gs({...i,initialData:s.data,initialDataUpdatedAt:s.updatedAt,staleTime:0,refetchOnWindowFocus:!1,retry:1}),queryKey:i.queryKey}}'
+           'function ao(n,r){const i=MR(n),s=window.__sfReadViewCache?window.__sfReadViewCache(NR(n),{coins:0,totalOrders:0,successfulOrders:0,referrals:0,referralCode:"",referredBy:null,createdAt:"1970-01-01T00:00:00.000Z"}):{data:{coins:0,totalOrders:0,successfulOrders:0,referrals:0,successfulOrders:0,referralCode:"",referredBy:null,createdAt:"1970-01-01T00:00:00.000Z"},updatedAt:0};return{...Gs({...i,initialData:s.data,initialDataUpdatedAt:s.updatedAt,staleTime:1e9,refetchOnMount:!1,refetchOnWindowFocus:!1,refetchOnReconnect:!1,retry:0}),queryKey:i.queryKey}}'
         )
         .replace(
           'function qR(n,r){const i=HR(n);return{...Gs(i),queryKey:i.queryKey}}',
-          'function qR(n,r){const i=HR(n),s=window.__sfReadViewCache?window.__sfReadViewCache(LR(n),[]):{data:[],updatedAt:0};return{...Gs({...i,initialData:s.data,initialDataUpdatedAt:s.updatedAt,staleTime:0,refetchOnWindowFocus:!1,retry:1}),queryKey:i.queryKey}}'
+           'function qR(n,r){const i=HR(n),s=window.__sfReadViewCache?window.__sfReadViewCache(LR(n),[]):{data:[],updatedAt:0};return{...Gs({...i,initialData:s.data,initialDataUpdatedAt:s.updatedAt,staleTime:1e9,refetchOnMount:!1,refetchOnWindowFocus:!1,refetchOnReconnect:!1,retry:0}),queryKey:i.queryKey}}'
         )
         .replace(
           'function eO(){return Gs({queryKey:["public-services"],queryFn:()=>qr("/api/services").then(n=>n.json()),staleTime:6e4})}',
-          'function eO(){const n=window.__sfReadViewCache?window.__sfReadViewCache("/api/services",{services:[],offerwallUrl:"",cpaLeadUrl:"",videoUrl:""}):{data:{services:[],offerwallUrl:"",cpaLeadUrl:"",videoUrl:""},updatedAt:0};return Gs({queryKey:["public-services"],queryFn:()=>qr("/api/services").then(r=>r.json()),initialData:n.data,initialDataUpdatedAt:n.updatedAt,staleTime:0,refetchOnWindowFocus:!1,retry:1})}'
+           'function eO(){const n=window.__sfReadViewCache?window.__sfReadViewCache("/api/services",{services:[],offerwallUrl:"",cpaLeadUrl:"",videoUrl:""}):{data:{services:[],offerwallUrl:"",cpaLeadUrl:"",videoUrl:""},updatedAt:0};return Gs({queryKey:["public-services"],queryFn:()=>qr("/api/services").then(r=>r.json()),initialData:n.data,initialDataUpdatedAt:n.updatedAt,staleTime:1e9,refetchOnMount:!1,refetchOnWindowFocus:!1,refetchOnReconnect:!1,retry:0})}'
         )
         .replace(
           'function aO(){return Gs({queryKey:["public-services"],queryFn:()=>qr("/api/services").then(n=>n.json()),staleTime:6e4})}',
-          'function aO(){const n=window.__sfReadViewCache?window.__sfReadViewCache("/api/services",{services:[],offerwallUrl:"",cpaLeadUrl:"",videoUrl:""}):{data:{services:[],offerwallUrl:"",cpaLeadUrl:"",videoUrl:""},updatedAt:0};return Gs({queryKey:["public-services"],queryFn:()=>qr("/api/services").then(r=>r.json()),initialData:n.data,initialDataUpdatedAt:n.updatedAt,staleTime:0,refetchOnWindowFocus:!1,retry:1})}'
+           'function aO(){const n=window.__sfReadViewCache?window.__sfReadViewCache("/api/services",{services:[],offerwallUrl:"",cpaLeadUrl:"",videoUrl:""}):{data:{services:[],offerwallUrl:"",cpaLeadUrl:"",videoUrl:""},updatedAt:0};return Gs({queryKey:["public-services"],queryFn:()=>qr("/api/services").then(r=>r.json()),initialData:n.data,initialDataUpdatedAt:n.updatedAt,staleTime:1e9,refetchOnMount:!1,refetchOnWindowFocus:!1,refetchOnReconnect:!1,retry:0})}'
         )
+         .replace(
+           'const dO=new MS;',
+           'const dO=new MS;window.addEventListener("sf-profile-synced",e=>{const n=e&&e.detail&&e.detail.data?e.detail.data:e&&e.detail||{},r=n.userId||n.id||localStorage.getItem("sf_user_id");r&&dO.setQueryData(["/api/user/"+r],n)});'
+         )
          /*
           * Keep one global ordering warning at the very top of Services,
           * before the title and all service listings.
@@ -794,7 +798,9 @@ window.APP_VERSION = APP_VERSION;
           : "0 0 18px 2px rgba(16,185,129,0.12),0 4px 20px rgba(0,0,0,0.5)",
         border: kind === 1
           ? "2px solid rgba(250,204,21,0.7)"
-          : "2px solid rgba(16,185,129,0.5)"
+           : "2px solid rgba(16,185,129,0.5)",
+         minHeight: "fit-content",
+         marginBottom: kind === 1 ? "16px" : "0"
       },
       className: "sf-earn-choice-card cursor-pointer rounded-2xl p-5 flex flex-col gap-3 active:scale-[0.98] transition-all select-none w-full",
       children: [
@@ -822,11 +828,54 @@ window.APP_VERSION = APP_VERSION;
             })
           ]
         }),
+       kind === 1 ? v.jsxs("div", {
+         className: "flex flex-wrap gap-2",
+         children: [
+           v.jsx("span", {
+             style: {
+               background: "rgba(250,204,21,0.16)",
+               color: "#fef08a",
+               border: "1px solid rgba(250,204,21,0.35)",
+               fontSize: "11px",
+               fontWeight: 700,
+               padding: "4px 9px",
+               borderRadius: "999px"
+             },
+             children: "Daily Bonus"
+           }),
+           v.jsx("span", {
+             style: {
+               background: "rgba(250,204,21,0.16)",
+               color: "#fef08a",
+               border: "1px solid rgba(250,204,21,0.35)",
+               fontSize: "11px",
+               fontWeight: 700,
+               padding: "4px 9px",
+               borderRadius: "999px"
+             },
+             children: "Bonus Clicks"
+           }),
+           v.jsx("span", {
+             style: {
+               background: "rgba(250,204,21,0.16)",
+               color: "#fef08a",
+               border: "1px solid rgba(250,204,21,0.35)",
+               fontSize: "11px",
+               fontWeight: 700,
+               padding: "4px 9px",
+               borderRadius: "999px"
+             },
+             children: "Clicks & Easy Tasks"
+           })
+         ]
+       }) : null,
         v.jsx("p", {
           style: {
-            color: kind === 1 ? "rgba(253,230,138,0.85)" : "rgba(167,243,208,0.85)",
+           color: kind === 1 ? "#fef3c7" : "#d1fae5",
             fontSize: "13px",
-            lineHeight: "1.5"
+           lineHeight: "1.5",
+           fontWeight: 600,
+           margin: 0
           },
           children: description
         }),
@@ -847,7 +896,7 @@ window.APP_VERSION = APP_VERSION;
     });
   }
   return v.jsxs("div", {
-    className: "sf-earn-main flex flex-col gap-5 px-3 pt-4 pb-10 w-full",
+     className: "sf-earn-main flex flex-col gap-4 px-3 pt-4 pb-10 w-full",
     children: [
       v.jsxs("div", {
         className: "text-center mb-1",

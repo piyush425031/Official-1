@@ -328,15 +328,28 @@ window.sfLoggedIn = window.sfLoggedIn || false;
     );
   }
 
-  // Shared post-auth sync: given the payload returned by sf_login / sf_recover,
-  // fetch the authoritative profile (sf_get_user) using the freshly issued
-  // token + userId, merge it in, and write it to localStorage in the
-  // background after the auth response has already reached the UI.
-  //
-  // The login/recovery RPC payload is returned immediately, then this refresh
-  // updates the cached profile when the authoritative read completes.
-  async function syncFreshProfile(data) {
+  function publishProfile(data, reason) {
     data = data || {};
+    try {
+      localStorage.setItem('sf_user_cache', JSON.stringify({
+        data:      data,
+        updatedAt: Date.now()
+      }));
+      window.dispatchEvent(new CustomEvent('sf-profile-synced', {
+        detail: { data: data, reason: reason || 'cache' }
+      }));
+    } catch (e) {}
+    return data;
+  }
+
+  /*
+   * The only fresh profile read in the client. Callers must be one of the
+   * explicit transactional triggers: a confirmed order or an offerwall
+   * postback notification. Login/recovery cache their RPC payload directly.
+   */
+  async function syncFreshProfile(data, reason) {
+    data = data || {};
+    var freshProfileRead = false;
     try {
       var token  = data.token  || '';
       var userId = data.userId || data.id || '';
@@ -357,10 +370,23 @@ window.sfLoggedIn = window.sfLoggedIn || false;
         // Fresh profile wins on every overlapping field (coins included),
         // but we keep token/userId explicit in case sf_get_user omits them.
         data = Object.assign({}, data, fresh, { token: token, userId: userId });
+        freshProfileRead = true;
       }
     } catch (e) {
       // Non-fatal — fall back to the login/recover RPC's own payload rather
       // than failing auth over a profile-refresh hiccup.
+    }
+
+    if (!freshProfileRead) {
+      try {
+        var cachedProfile = JSON.parse(localStorage.getItem('sf_user_cache') || 'null');
+        var cachedData = cachedProfile && cachedProfile.data
+          ? cachedProfile.data
+          : cachedProfile;
+        if (cachedData && typeof cachedData === 'object') {
+          data = Object.assign({}, cachedData, data);
+        }
+      } catch (e) {}
     }
 
     // ── Auth cache write ──────────────────────────────────────────────────
@@ -373,12 +399,9 @@ window.sfLoggedIn = window.sfLoggedIn || false;
       /* login state transition → keep the global flag in sync */
       if (typeof window.sfSetLoggedIn === 'function') window.sfSetLoggedIn(true);
       else if (typeof window.sfIsLoggedIn === 'function') window.sfIsLoggedIn();
-      localStorage.setItem('sf_user_cache', JSON.stringify({
-        data:      data,
-        updatedAt: Date.now()
-      }));
     } catch (e) {}
 
+    publishProfile(data, reason);
     return data;
   }
 
@@ -410,7 +433,7 @@ window.sfLoggedIn = window.sfLoggedIn || false;
       if (typeof window.sfSetLoggedIn === 'function') window.sfSetLoggedIn(true);
       else if (typeof window.sfIsLoggedIn === 'function') window.sfIsLoggedIn();
     } catch (e) {}
-    syncFreshProfile(data).catch(function () {});
+    publishProfile(data, 'login');
     return jsonRes(data);
   }
 
@@ -435,7 +458,7 @@ window.sfLoggedIn = window.sfLoggedIn || false;
       if (data.token) localStorage.setItem('sf_token', data.token);
       if (typeof window.sfIsLoggedIn === 'function') window.sfIsLoggedIn();
     } catch (e) {}
-    syncFreshProfile(data).catch(function () {});
+    publishProfile(data, 'recovery');
     return jsonRes(data);
   }
 
@@ -503,6 +526,20 @@ window.sfLoggedIn = window.sfLoggedIn || false;
     var orderData = res.data;            // contains orderId, newCoins, etc.
     var orderId   = orderData.orderId;
 
+    /*
+     * The order RPC has confirmed creation. This is the one authoritative
+     * profile read for the order transaction; do it before returning success
+     * so the dashboard/header receives the updated coins and order counters.
+     */
+    var currentUserId = '';
+    try { currentUserId = localStorage.getItem('sf_user_id') || ''; } catch (_) {}
+    if (currentUserId && token) {
+      await syncFreshProfile({
+        userId: currentUserId,
+        token: token
+      }, 'order-success').catch(function () {});
+    }
+
     // ── Step 2: Fetch service config & call SMM Panel (best-effort) ─────
     // Failure here (CORS, network, panel reject) is silently swallowed —
     // the order is already saved and will be processed manually if needed.
@@ -552,6 +589,65 @@ window.sfLoggedIn = window.sfLoggedIn || false;
     // Return success immediately after Supabase write — don't wait for SMM
     return jsonRes(orderData, 201);
   }
+
+  var _offerwallSyncInFlight = null;
+
+  function shouldHandleOfferwallPush(payload) {
+    if (!payload || typeof payload !== 'object') return true;
+    var type = String(
+      payload.type || payload.event || payload.name || payload.kind || ''
+    ).toLowerCase();
+    return !type || /offerwall|postback|silent.?push|coin|credit/.test(type);
+  }
+
+  function syncProfileForOfferwallPostback(payload) {
+    if (!shouldHandleOfferwallPush(payload)) return Promise.resolve(false);
+    if (_offerwallSyncInFlight) return _offerwallSyncInFlight;
+
+    var token = '';
+    var userId = '';
+    try {
+      token = localStorage.getItem('sf_token') || '';
+      userId = localStorage.getItem('sf_user_id') || '';
+    } catch (e) {}
+    if (!token || !userId) return Promise.resolve(false);
+
+    _offerwallSyncInFlight = syncFreshProfile({
+      userId: userId,
+      token: token
+    }, 'offerwall-postback').then(function () {
+      return true;
+    }).catch(function () {
+      return false;
+    }).finally(function () {
+      _offerwallSyncInFlight = null;
+    });
+    return _offerwallSyncInFlight;
+  }
+
+  /*
+   * Native wrappers can deliver the server's silent push through a custom
+   * DOM event, a postMessage bridge, or a direct bridge call. All supported
+   * paths converge on the same in-flight promise, so one notification causes
+   * one Supabase profile read.
+   */
+  window.__sfHandleOfferwallPostback = syncProfileForOfferwallPostback;
+  window.__sfHandleSilentPush = syncProfileForOfferwallPostback;
+  ['sf-offerwall-postback', 'sf-silent-push', 'offerwall-postback',
+   'silent-push', 'silentPush', 'offerwallPostback']
+    .forEach(function (eventName) {
+      window.addEventListener(eventName, function (event) {
+        syncProfileForOfferwallPostback(event && event.detail);
+      });
+    });
+  window.addEventListener('message', function (event) {
+    var payload = event && event.data;
+    if (!payload || typeof payload !== 'object') return;
+    var type = String(payload.type || payload.event || '').toLowerCase();
+    if (/offerwall|postback|silent.?push/.test(type)) {
+      syncProfileForOfferwallPostback(payload);
+    }
+  });
 
   async function handleGetOrders(init) {
     var token = getToken(init);
@@ -1199,6 +1295,43 @@ window.sfLoggedIn = window.sfLoggedIn || false;
       });
   }
 
+  function isExplicitProfileSync(init) {
+    var headers = (init && init.headers) || {};
+    var trigger = '';
+    if (typeof headers.get === 'function') {
+      trigger = headers.get('x-sf-sync-trigger') ||
+        headers.get('X-SF-Sync-Trigger') || '';
+    } else {
+      trigger = headers['x-sf-sync-trigger'] ||
+        headers['X-SF-Sync-Trigger'] || '';
+    }
+    return trigger === 'order-success' || trigger === 'offerwall-postback';
+  }
+
+  function readLocalProfileFallback() {
+    try {
+      var raw = localStorage.getItem('sf_user_cache');
+      var parsed = raw ? JSON.parse(raw) : null;
+      if (parsed && parsed.data) return parsed.data;
+      if (parsed && typeof parsed === 'object') return parsed;
+    } catch (e) {}
+    return {
+      coins: 0,
+      totalOrders: 0,
+      successfulOrders: 0,
+      referrals: 0,
+      referralCode: '',
+      referredBy: null
+    };
+  }
+
+  function readLocalRouteFallback(url) {
+    if (/^\/api\/user\/[^/]+$/.test(url)) return readLocalProfileFallback();
+    if (url === '/api/orders' || /^\/api\/orders\/[^/]+$/.test(url)) return [];
+    if (url === '/api/services') return readLocalServicesCache();
+    return {};
+  }
+
   // ─── fetch override ──────────────────────────────────────────────────────────
 
   // Direct outbound calls use the captured async fetch layer without adding a
@@ -1233,6 +1366,16 @@ window.sfLoggedIn = window.sfLoggedIn || false;
             // the next Supabase request is reserved for an explicit mutation
             // or a critical first-time user-data load.
             return jsonRes(cached.data);
+          }
+
+          /*
+           * A missing cache must not turn a tab switch or screen mount into a
+           * Supabase read. The only exception is an explicit transactional
+           * profile sync initiated by the order-success or offerwall-postback
+           * event paths above. All other GETs render their local fallback.
+           */
+          if (!isExplicitProfileSync(init)) {
+            return jsonRes(readLocalRouteFallback(url));
           }
         } else {
           // Login/recovery changes the active account. Order submission is

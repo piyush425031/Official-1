@@ -26,10 +26,7 @@
         var toast    = document.getElementById('sf-order-toast');
         var toastMsg = document.getElementById('sf-toast-msg');
         var _timer   = null;
-         var _pollTimer = null;
          var _toastTimers = [];
-        var _lastChk = 0;
-        var INTERVAL = 60000;
 
         toast.addEventListener('click', function () {
           clearTimeout(_timer);
@@ -43,58 +40,31 @@
           _timer = setTimeout(function () { toast.classList.remove('show'); }, 9000);
         }
 
-        function checkCompleted() {
-          if (!sfLoggedIn()) return;
-          var now = Date.now();
-          if (now - _lastChk < INTERVAL) return;
-          _lastChk = now;
-
-          var uid   = localStorage.getItem('sf_user_id');
-          var token = localStorage.getItem('sf_token');
-
-          fetch('/api/user/' + uid, {
-            headers: { Authorization: 'Bearer ' + token }
-          })
-          .then(function (r) { return r.json(); })
-          .then(function (data) {
-            var list = (data && Array.isArray(data.newCompleted)) ? data.newCompleted : [];
-            list.forEach(function (o, i) {
-               var toastTimer = setTimeout(function () {
-                showToast(
-                  'आपका ' + o.quantity + ' ' +
-                  (SVC[o.serviceIndex] || 'Service') +
-                  ' का ऑर्डर सफलतापूर्वक पूरा हो चुका है! 🎉'
-                );
-              }, i * 10000);
-               _toastTimers.push(toastTimer);
-            });
-          })
-          .catch(function () {});
-        }
-
-         function scheduleCheck(delay) {
-           clearTimeout(_pollTimer);
-           _pollTimer = setTimeout(function () {
-             checkCompleted();
-             if (!document.hidden) scheduleCheck(INTERVAL);
-           }, delay);
+         function showCompletedFromProfile(data) {
+           var list = (data && Array.isArray(data.newCompleted)) ? data.newCompleted : [];
+           list.forEach(function (o, i) {
+             var toastTimer = setTimeout(function () {
+               showToast(
+                 'आपका ' + o.quantity + ' ' +
+                 (SVC[o.serviceIndex] || 'Service') +
+                 ' का ऑर्डर सफलतापूर्वक पूरा हो चुका है! 🎉'
+               );
+             }, i * 10000);
+             _toastTimers.push(toastTimer);
+           });
          }
 
-         scheduleCheck(5000);
-
-         document.addEventListener('visibilitychange', function () {
-           if (!document.hidden) {
-             _lastChk = 0;
-             checkCompleted();
-             scheduleCheck(INTERVAL);
-           } else {
-             clearTimeout(_pollTimer);
-           }
+         /*
+          * Completion notices now use the same explicit profile-sync event as
+          * the rest of the UI. There is no timer or visibility-triggered GET.
+          */
+         window.addEventListener('sf-profile-synced', function (event) {
+           var detail = event && event.detail;
+           showCompletedFromProfile(detail && detail.data ? detail.data : detail);
          }, { passive: true });
 
          window.addEventListener('pagehide', function () {
            clearTimeout(_timer);
-           clearTimeout(_pollTimer);
            _toastTimers.forEach(clearTimeout);
            _toastTimers = [];
          }, { once: true, passive: true });
