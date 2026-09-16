@@ -96,6 +96,8 @@ window.sfLoggedIn = window.sfLoggedIn || false;
   var DB_INIT_MAX_ATTEMPTS = 20;
   var appSettingsChecked = false;
   var startupProfileSynced = false;
+  var startupServicesSynced = false;
+  var startupOrdersSynced = false;
   var dbReadyResolve;
   var dbReady = new Promise(function (resolve) {
     dbReadyResolve = resolve;
@@ -183,6 +185,8 @@ window.sfLoggedIn = window.sfLoggedIn || false;
       setTimeout(function () {
         loadAppSettings(db);
         syncProfileOnStartup();
+        syncServicesOnStartup();
+        syncOrdersOnStartup();
       }, 0);
     }
     if (db && typeof window.__sfAttachSupabaseAuth === 'function') {
@@ -294,6 +298,16 @@ window.sfLoggedIn = window.sfLoggedIn || false;
         writeViewCache(cache);
       }).catch(function () {});
     } catch (e) {}
+  }
+
+  function cacheRouteData(url, data) {
+    if (!url) return;
+    var cache = readViewCache();
+    cache[String(url).split('?')[0]] = {
+      data: data,
+      updatedAt: Date.now()
+    };
+    writeViewCache(cache);
   }
 
   window.__sfReadViewCache = function (url, fallback) {
@@ -476,6 +490,80 @@ window.sfLoggedIn = window.sfLoggedIn || false;
     }, 'app-startup');
   }
 
+  /*
+   * Load the shared tab data once per document. The app uses hash navigation,
+   * so switching tabs must consume these cached responses rather than issue
+   * another Supabase request.
+   */
+  async function syncServicesOnStartup() {
+    if (startupServicesSynced || !db) return;
+    startupServicesSynced = true;
+    try {
+      var response = await route('/api/services', {
+        method: 'GET',
+        headers: {
+          Authorization: 'Bearer ' + (localStorage.getItem('sf_token') || '')
+        }
+      });
+      if (!response || !response.ok) return;
+      var data = await response.clone().json();
+      cacheRouteData('/api/services', data);
+      try {
+        localStorage.setItem('sf_services_cache', JSON.stringify({
+          data: data,
+          updatedAt: Date.now()
+        }));
+        window.__sfStaticServices = data;
+        window.dispatchEvent(new CustomEvent('sf-services-synced', {
+          detail: { data: data, reason: 'app-startup' }
+        }));
+      } catch (e) {}
+    } catch (e) {
+      // Keep the previous service cache available when startup is offline.
+    }
+  }
+
+  async function syncOrdersOnStartup() {
+    if (startupOrdersSynced || !db) return;
+    var token = '';
+    var userId = '';
+    try {
+      token = localStorage.getItem('sf_token') || '';
+      userId = localStorage.getItem('sf_user_id') || '';
+    } catch (e) {}
+    if (!token || !userId) return;
+    startupOrdersSynced = true;
+    try {
+      var response = await route('/api/orders', {
+        method: 'GET',
+        headers: { Authorization: 'Bearer ' + token }
+      });
+      if (!response || !response.ok) return;
+      var data = await response.clone().json();
+      cacheRouteData('/api/orders', data);
+      cacheRouteData('/api/orders/' + userId, data);
+      try {
+        localStorage.setItem('sf_orders_cache', JSON.stringify({
+          userId: userId,
+          data: data,
+          updatedAt: Date.now()
+        }));
+        window.dispatchEvent(new CustomEvent('sf-orders-synced', {
+          detail: { data: data, reason: 'app-startup' }
+        }));
+      } catch (e) {}
+    } catch (e) {
+      // Keep the previous order cache available when startup is offline.
+    }
+  }
+
+  /* Exposed for a future pull-to-refresh gesture; it is never called by tab
+     navigation, and therefore remains an explicit network refresh. */
+  window.__sfRefreshOrders = function () {
+    startupOrdersSynced = false;
+    return syncOrdersOnStartup();
+  };
+
   // ─── route handlers ──────────────────────────────────────────────────────────
 
   async function handleLogin(body) {
@@ -609,6 +697,7 @@ window.sfLoggedIn = window.sfLoggedIn || false;
         userId: currentUserId,
         token: token
       }, 'order-success').catch(function () {});
+      await refreshOrdersCache(token, currentUserId).catch(function () {});
     }
 
     // ── Step 2: Fetch service config & call SMM Panel (best-effort) ─────
@@ -763,6 +852,27 @@ window.sfLoggedIn = window.sfLoggedIn || false;
     });
 
     return jsonRes(rows);
+  }
+
+  async function refreshOrdersCache(token, userId) {
+    if (!token || !userId) return;
+    var response = await handleGetOrders({
+      headers: { Authorization: 'Bearer ' + token }
+    });
+    if (!response || !response.ok) return;
+    var data = await response.clone().json();
+    cacheRouteData('/api/orders', data);
+    cacheRouteData('/api/orders/' + userId, data);
+    try {
+      localStorage.setItem('sf_orders_cache', JSON.stringify({
+        userId: userId,
+        data: data,
+        updatedAt: Date.now()
+      }));
+      window.dispatchEvent(new CustomEvent('sf-orders-synced', {
+        detail: { data: data, reason: 'order-success' }
+      }));
+    } catch (e) {}
   }
 
   async function handleSyncOrderStatus(orderId, init) {
