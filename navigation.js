@@ -610,7 +610,7 @@ window.APP_VERSION = APP_VERSION;
         )
          .replace(
            'const dO=new MS;',
-           'const dO=new MS;window.addEventListener("sf-profile-synced",e=>{const n=e&&e.detail&&e.detail.data?e.detail.data:e&&e.detail||{},r=n.userId||n.id||localStorage.getItem("sf_user_id");r&&dO.setQueryData(["/api/user/"+r],n)});'
+           'const dO=new MS;window.addEventListener("sf-profile-synced",e=>{const n=e&&e.detail&&e.detail.data?e.detail.data:e&&e.detail||{},r=n.userId||n.id||localStorage.getItem("sf_user_id");r&&dO.setQueryData(["/api/user/"+r],n)});window.addEventListener("sf-services-synced",e=>{const n=e&&e.detail&&e.detail.data?e.detail.data:e&&e.detail||{};dO.setQueryData(["public-services"],n)});window.addEventListener("sf-orders-synced",e=>{const n=e&&e.detail&&e.detail.data?e.detail.data:[],r=localStorage.getItem("sf_user_id");r&&dO.setQueryData(["/api/orders/"+r],n)});'
          )
          /*
           * Keep one global ordering warning at the very top of Services,
@@ -737,7 +737,7 @@ window.APP_VERSION = APP_VERSION;
        var earnEnd = sfBundle.indexOf('const lO=', earnStart);
        if (earnStart !== -1 && earnEnd > earnStart) {
          var localEarnComponent = `function rO(){
-  var cached = {};
+   var cached = {};
   try {
     var raw = localStorage.getItem("sf_services_cache");
     var parsed = raw ? JSON.parse(raw) : null;
@@ -746,22 +746,38 @@ window.APP_VERSION = APP_VERSION;
   if ((!cached.offerwallUrl && !cached.cpaLeadUrl) && window.__sfStaticServices) {
     cached = window.__sfStaticServices;
   }
+   var serviceState = g.useState(cached);
+   var currentServices = serviceState[0];
+   g.useEffect(function () {
+     var update = function (event) {
+       var next = event && event.detail && event.detail.data
+         ? event.detail.data
+         : (event && event.detail ? event.detail : null);
+       if (next && typeof next === "object") currentServices = next, serviceState[1](next);
+     };
+     window.addEventListener("sf-services-synced", update);
+     return function () { window.removeEventListener("sf-services-synced", update); };
+   }, []);
   function addUserId(rawUrl) {
     var href = String(rawUrl || "").trim();
     var uid = "";
-    try { uid = localStorage.getItem("sf_user_unique_id") || ""; } catch (e) {}
+    try {
+      uid = localStorage.getItem("sf_user_unique_id") ||
+        localStorage.getItem("sf_user_id") || "";
+    } catch (e) {}
     if (!uid) return href;
+    href = href.replace(/localhost/gi, window.location.hostname);
     href = href
       .replace(/\\{(?:user_?id|userid)\\}/gi, uid)
       .replace(/%7B(?:user_?id|userid)%7D/gi, encodeURIComponent(uid))
       .replace(/\\[(?:user_?id|userid)\\]/gi, uid);
     try {
       var parsed = new URL(href, window.location.href);
-      parsed.searchParams.set("subid", uid);
+      parsed.searchParams.set("user_id", uid);
       return parsed.toString();
     } catch (e) {
       return href + (href.indexOf("?") === -1 ? "?" : "&") +
-        "subid=" + encodeURIComponent(uid);
+        "user_id=" + encodeURIComponent(uid);
     }
   }
   function openChoice(kind, rawUrl) {
@@ -907,10 +923,10 @@ window.APP_VERSION = APP_VERSION;
       }),
       choiceCard(1, "Choice 1", "KING CHOICE 👑",
         "सबसे आसान टास्क, डेली बोनस और हर 2 घंटे में बोनस कॉइन्स पाएं 👑",
-        "linear-gradient(90deg,#f59e0b,#fbbf24)", cached.offerwallUrl, "👑"),
+         "linear-gradient(90deg,#f59e0b,#fbbf24)", currentServices.offerwallUrl, "👑"),
       choiceCard(2, "Choice 2", "Instant Coins / तुरंत कॉइन्स",
         "तुरंत coins पाएं — instant reward offers, quick & easy",
-        "linear-gradient(90deg,#10b981,#34d399)", cached.cpaLeadUrl, "⚡")
+         "linear-gradient(90deg,#10b981,#34d399)", currentServices.cpaLeadUrl, "⚡")
     ]
   });
 }`;

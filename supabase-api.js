@@ -95,6 +95,9 @@ window.sfLoggedIn = window.sfLoggedIn || false;
   var dbInitAttempts = 0;
   var DB_INIT_MAX_ATTEMPTS = 20;
   var appSettingsChecked = false;
+  var startupProfileSynced = false;
+  var startupServicesSynced = false;
+  var startupOrdersSynced = false;
   var dbReadyResolve;
   var dbReady = new Promise(function (resolve) {
     dbReadyResolve = resolve;
@@ -111,16 +114,23 @@ window.sfLoggedIn = window.sfLoggedIn || false;
         .select('*')
         .limit(20);
       var rows = result && Array.isArray(result.data) ? result.data : [];
+      var allSettings = {};
+      rows.forEach(function (row) {
+        if (!row) return;
+        if (row.key) allSettings[String(row.key)] = row.value;
+        Object.keys(row).forEach(function (key) {
+          if (key !== 'id' && key !== 'key' && key !== 'value' &&
+              row[key] !== undefined && row[key] !== null) {
+            allSettings[key] = row[key];
+          }
+        });
+      });
       var settings = rows.find(function (row) {
         return row && (row.latest_version || row.update_url ||
           row.is_mandatory !== undefined);
       }) || null;
       if (!settings) {
-        var keyValueSettings = {};
-        rows.forEach(function (row) {
-          if (!row || !row.key) return;
-          keyValueSettings[String(row.key)] = row.value;
-        });
+        var keyValueSettings = allSettings;
         if (keyValueSettings.latest_version || keyValueSettings.update_url ||
             keyValueSettings.is_mandatory !== undefined) {
           settings = keyValueSettings;
@@ -129,6 +139,35 @@ window.sfLoggedIn = window.sfLoggedIn || false;
       if (!result.error && settings &&
           typeof window.__sfApplyUpdateSettings === 'function') {
         window.__sfApplyUpdateSettings(settings);
+      }
+      if (!result.error) {
+        var cachedServices = readLocalServicesCache();
+        var offerwallUrl = allSettings.offerwall_url ||
+          allSettings.choice_1_url || cachedServices.offerwallUrl || '';
+        var cpaLeadUrl = allSettings.cpa_lead_url ||
+          allSettings.choice_2_url || cachedServices.cpaLeadUrl || '';
+        var freshServices = Object.assign({}, cachedServices, {
+          offerwallUrl: offerwallUrl,
+          cpaLeadUrl: cpaLeadUrl
+        });
+        window.__sfStaticServices = freshServices;
+        try {
+          localStorage.setItem('sf_services_cache', JSON.stringify({
+            data: freshServices,
+            updatedAt: Date.now()
+          }));
+        } catch (e) {}
+        var servicesCache = readViewCache();
+        servicesCache['/api/services'] = {
+          data: freshServices,
+          updatedAt: Date.now()
+        };
+        writeViewCache(servicesCache);
+        try {
+          window.dispatchEvent(new CustomEvent('sf-services-synced', {
+            detail: freshServices
+          }));
+        } catch (e) {}
       }
     } catch (e) {
       // A missing table or restrictive policy must never block app startup.
@@ -142,7 +181,14 @@ window.sfLoggedIn = window.sfLoggedIn || false;
     db = createSupabaseClient();
     window.__sfSupabaseClient = db;
     window.__sfSupabaseReady = !!db;
-    if (db) setTimeout(function () { loadAppSettings(db); }, 0);
+    if (db) {
+      setTimeout(function () {
+        loadAppSettings(db);
+        syncProfileOnStartup();
+        syncServicesOnStartup();
+        syncOrdersOnStartup();
+      }, 0);
+    }
     if (db && typeof window.__sfAttachSupabaseAuth === 'function') {
       try { window.__sfAttachSupabaseAuth(db); } catch (e) {}
     }
@@ -254,6 +300,16 @@ window.sfLoggedIn = window.sfLoggedIn || false;
     } catch (e) {}
   }
 
+  function cacheRouteData(url, data) {
+    if (!url) return;
+    var cache = readViewCache();
+    cache[String(url).split('?')[0]] = {
+      data: data,
+      updatedAt: Date.now()
+    };
+    writeViewCache(cache);
+  }
+
   window.__sfReadViewCache = function (url, fallback) {
     var cache = readViewCache();
     var entry = cache[String(url || '').split('?')[0]];
@@ -335,6 +391,15 @@ window.sfLoggedIn = window.sfLoggedIn || false;
         data:      data,
         updatedAt: Date.now()
       }));
+      var userId = data.userId || data.id || localStorage.getItem('sf_user_id') || '';
+      if (userId) {
+        var cache = readViewCache();
+        cache['/api/user/' + userId] = {
+          data: data,
+          updatedAt: Date.now()
+        };
+        writeViewCache(cache);
+      }
       window.dispatchEvent(new CustomEvent('sf-profile-synced', {
         detail: { data: data, reason: reason || 'cache' }
       }));
@@ -343,9 +408,10 @@ window.sfLoggedIn = window.sfLoggedIn || false;
   }
 
   /*
-   * The only fresh profile read in the client. Callers must be one of the
-   * explicit transactional triggers: a confirmed order or an offerwall
-   * postback notification. Login/recovery cache their RPC payload directly.
+   * The authoritative profile read in the client. It is used once when an
+   * existing session is restored, immediately after login/recovery, and after
+   * the explicit order-success or offerwall-postback triggers. Every result is
+   * written to local storage and broadcast before the caller continues.
    */
   async function syncFreshProfile(data, reason) {
     data = data || {};
@@ -405,6 +471,110 @@ window.sfLoggedIn = window.sfLoggedIn || false;
     return data;
   }
 
+  /*
+   * One authoritative profile query per document launch. Hash/tab navigation
+   * keeps the same document alive, so it cannot trigger another startup sync.
+   */
+  async function syncProfileOnStartup() {
+    if (startupProfileSynced || !db) return;
+    var token = '';
+    var userId = '';
+    try {
+      token = localStorage.getItem('sf_token') || '';
+      userId = localStorage.getItem('sf_user_id') || '';
+    } catch (e) {}
+    if (!token || !userId) return;
+    startupProfileSynced = true;
+    await syncFreshProfile({
+      token: token,
+      userId: userId
+    }, 'app-startup');
+  }
+
+  /*
+   * Login and recovery call this before returning their auth response. Keeping
+   * the helper separate makes the ordering explicit: credentials are stored,
+   * the live profile is fetched once, the global cache/event are updated, and
+   * only then can the auth UI navigate to Home.
+   */
+  async function fetchUserData(data, reason) {
+    return syncFreshProfile(data, reason);
+  }
+
+  /*
+   * Load the shared tab data once per document. The app uses hash navigation,
+   * so switching tabs must consume these cached responses rather than issue
+   * another Supabase request.
+   */
+  async function syncServicesOnStartup() {
+    if (startupServicesSynced || !db) return;
+    startupServicesSynced = true;
+    try {
+      var response = await route('/api/services', {
+        method: 'GET',
+        headers: {
+          Authorization: 'Bearer ' + (localStorage.getItem('sf_token') || '')
+        }
+      });
+      if (!response || !response.ok) return;
+      var data = await response.clone().json();
+      cacheRouteData('/api/services', data);
+      try {
+        localStorage.setItem('sf_services_cache', JSON.stringify({
+          data: data,
+          updatedAt: Date.now()
+        }));
+        window.__sfStaticServices = data;
+        window.dispatchEvent(new CustomEvent('sf-services-synced', {
+          detail: { data: data, reason: 'app-startup' }
+        }));
+      } catch (e) {}
+    } catch (e) {
+      // Keep the previous service cache available when startup is offline.
+    }
+  }
+
+  async function syncOrdersOnStartup() {
+    if (startupOrdersSynced || !db) return;
+    var token = '';
+    var userId = '';
+    try {
+      token = localStorage.getItem('sf_token') || '';
+      userId = localStorage.getItem('sf_user_id') || '';
+    } catch (e) {}
+    if (!token || !userId) return;
+    startupOrdersSynced = true;
+    try {
+      var response = await route('/api/orders', {
+        method: 'GET',
+        headers: { Authorization: 'Bearer ' + token }
+      });
+      if (!response || !response.ok) return;
+      var data = await response.clone().json();
+      cacheRouteData('/api/orders', data);
+      cacheRouteData('/api/orders/' + userId, data);
+      try {
+        localStorage.setItem('sf_orders_cache', JSON.stringify({
+          userId: userId,
+          data: data,
+          updatedAt: Date.now()
+        }));
+        window.dispatchEvent(new CustomEvent('sf-orders-synced', {
+          detail: { data: data, reason: 'app-startup' }
+        }));
+      } catch (e) {}
+    } catch (e) {
+      // Keep the previous order cache available when startup is offline.
+    }
+  }
+
+  /* Exposed for a future pull-to-refresh gesture; it is never called by tab
+     navigation, and therefore remains an explicit network refresh. */
+  window.__sfRefreshOrders = function () {
+    startupOrdersSynced = false;
+    return syncOrdersOnStartup();
+  };
+
   // ─── route handlers ──────────────────────────────────────────────────────────
 
   async function handleLogin(body) {
@@ -430,10 +600,8 @@ window.sfLoggedIn = window.sfLoggedIn || false;
       if (data.userId) localStorage.setItem('sf_user_id', data.userId);
       if (data.userId) localStorage.setItem('sf_user_unique_id', data.userId);
       if (data.token) localStorage.setItem('sf_token', data.token);
-      if (typeof window.sfSetLoggedIn === 'function') window.sfSetLoggedIn(true);
-      else if (typeof window.sfIsLoggedIn === 'function') window.sfIsLoggedIn();
     } catch (e) {}
-    publishProfile(data, 'login');
+    data = await fetchUserData(data, 'login-success');
     return jsonRes(data);
   }
 
@@ -456,9 +624,8 @@ window.sfLoggedIn = window.sfLoggedIn || false;
       if (data.userId) localStorage.setItem('sf_user_id', data.userId);
       if (data.userId) localStorage.setItem('sf_user_unique_id', data.userId);
       if (data.token) localStorage.setItem('sf_token', data.token);
-      if (typeof window.sfIsLoggedIn === 'function') window.sfIsLoggedIn();
     } catch (e) {}
-    publishProfile(data, 'recovery');
+    data = await fetchUserData(data, 'recovery-success');
     return jsonRes(data);
   }
 
@@ -538,6 +705,7 @@ window.sfLoggedIn = window.sfLoggedIn || false;
         userId: currentUserId,
         token: token
       }, 'order-success').catch(function () {});
+      await refreshOrdersCache(token, currentUserId).catch(function () {});
     }
 
     // ── Step 2: Fetch service config & call SMM Panel (best-effort) ─────
@@ -692,6 +860,27 @@ window.sfLoggedIn = window.sfLoggedIn || false;
     });
 
     return jsonRes(rows);
+  }
+
+  async function refreshOrdersCache(token, userId) {
+    if (!token || !userId) return;
+    var response = await handleGetOrders({
+      headers: { Authorization: 'Bearer ' + token }
+    });
+    if (!response || !response.ok) return;
+    var data = await response.clone().json();
+    cacheRouteData('/api/orders', data);
+    cacheRouteData('/api/orders/' + userId, data);
+    try {
+      localStorage.setItem('sf_orders_cache', JSON.stringify({
+        userId: userId,
+        data: data,
+        updatedAt: Date.now()
+      }));
+      window.dispatchEvent(new CustomEvent('sf-orders-synced', {
+        detail: { data: data, reason: 'order-success' }
+      }));
+    } catch (e) {}
   }
 
   async function handleSyncOrderStatus(orderId, init) {
