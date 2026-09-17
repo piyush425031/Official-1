@@ -408,9 +408,10 @@ window.sfLoggedIn = window.sfLoggedIn || false;
   }
 
   /*
-   * The only fresh profile read in the client. Callers must be one of the
-   * explicit transactional triggers: a confirmed order or an offerwall
-   * postback notification. Login/recovery cache their RPC payload directly.
+   * The authoritative profile read in the client. It is used once when an
+   * existing session is restored, immediately after login/recovery, and after
+   * the explicit order-success or offerwall-postback triggers. Every result is
+   * written to local storage and broadcast before the caller continues.
    */
   async function syncFreshProfile(data, reason) {
     data = data || {};
@@ -488,6 +489,16 @@ window.sfLoggedIn = window.sfLoggedIn || false;
       token: token,
       userId: userId
     }, 'app-startup');
+  }
+
+  /*
+   * Login and recovery call this before returning their auth response. Keeping
+   * the helper separate makes the ordering explicit: credentials are stored,
+   * the live profile is fetched once, the global cache/event are updated, and
+   * only then can the auth UI navigate to Home.
+   */
+  async function fetchUserData(data, reason) {
+    return syncFreshProfile(data, reason);
   }
 
   /*
@@ -589,10 +600,8 @@ window.sfLoggedIn = window.sfLoggedIn || false;
       if (data.userId) localStorage.setItem('sf_user_id', data.userId);
       if (data.userId) localStorage.setItem('sf_user_unique_id', data.userId);
       if (data.token) localStorage.setItem('sf_token', data.token);
-      if (typeof window.sfSetLoggedIn === 'function') window.sfSetLoggedIn(true);
-      else if (typeof window.sfIsLoggedIn === 'function') window.sfIsLoggedIn();
     } catch (e) {}
-    publishProfile(data, 'login');
+    data = await fetchUserData(data, 'login-success');
     return jsonRes(data);
   }
 
@@ -615,9 +624,8 @@ window.sfLoggedIn = window.sfLoggedIn || false;
       if (data.userId) localStorage.setItem('sf_user_id', data.userId);
       if (data.userId) localStorage.setItem('sf_user_unique_id', data.userId);
       if (data.token) localStorage.setItem('sf_token', data.token);
-      if (typeof window.sfIsLoggedIn === 'function') window.sfIsLoggedIn();
     } catch (e) {}
-    publishProfile(data, 'recovery');
+    data = await fetchUserData(data, 'recovery-success');
     return jsonRes(data);
   }
 
