@@ -46,7 +46,7 @@ jobs:
           mkdir -p dist
           cp -r *.html *.js *.css assets public dist/ 2>/dev/null || true
 
-          # Inject CSS & Native Android WebShare polyfill inside index.html
+          # Inject CSS & Native Android WebShare + Intent Link Handling Script
           node -e '
             const fs = require("fs");
             if (fs.existsSync("dist/index.html")) {
@@ -71,7 +71,7 @@ jobs:
                 </style>
               `;
 
-              // Native Android Share Sheet + In-App Browser Auto Capture Script
+              // Intent Link Handling & Native Share Script
               const nativeShareScript = `
                 <script>
                   // Override navigator.share for Android Native Share Sheet
@@ -90,15 +90,29 @@ jobs:
                     };
                   }
 
-                  // Handle External Links
+                  // Handle Play Store and Intent URLs to prevent ERR_UNKNOWN_URL_SCHEME
                   document.addEventListener("click", function(e) {
                     const target = e.target.closest("a, button");
                     if (target) {
-                      const href = target.getAttribute("href") || target.getAttribute("onclick");
-                      if (href && (href.includes("timewall") || href.includes("http")) && !href.includes("whatsapp")) {
+                      let href = target.getAttribute("href") || target.getAttribute("onclick") || "";
+                      if (href.startsWith("intent://") || href.startsWith("market://") || href.includes("play.google.com")) {
+                        e.preventDefault();
+                        if (href.startsWith("intent://")) {
+                          // Extract http/https fallback URL from intent string
+                          const match = href.match(/scheme=(https?);.*?package=([^;]+)/) || href.match(/S.browser_fallback_url=([^;]+)/);
+                          if (match && match[1]) {
+                            href = decodeURIComponent(match[1]);
+                          } else {
+                            const pkgMatch = href.match(/package=([^;]+)/);
+                            if (pkgMatch) {
+                              href = "https://play.google.com/store/apps/details?id=" + pkgMatch[1];
+                            }
+                          }
+                        }
                         if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser) {
-                          e.preventDefault();
                           window.Capacitor.Plugins.Browser.open({ url: href });
+                        } else {
+                          window.open(href, "_blank");
                         }
                       }
                     }
